@@ -4,7 +4,7 @@ import cors from "cors";
 import notFound from "./middlewares/notFound.js";
 import errorHandler from "./middlewares/errorMiddleware.js";
 import authRoutes from "./routes/authRoutes.js";
-
+import projectRoutes from "./routes/projectRoutes.js";
 const app = express();
 
 app.use(cors());
@@ -23,6 +23,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/projects", projectRoutes);
 
 app.use(notFound);
 
