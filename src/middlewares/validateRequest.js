@@ -1,6 +1,7 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 
+
 /**
  * Validate Request Middleware
  *
@@ -20,26 +21,63 @@ const validateRequest = (
         try {
 
             const validatedData = await schema.validate(
+
                 req[property],
+
                 {
                     abortEarly: false,
                     stripUnknown: true,
                 }
+
             );
 
-            req[property] = validatedData;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Update validated data
+            |--------------------------------------------------------------------------
+            */
+
+            if (property === "query") {
+
+                /*
+                Express 5 req.query is readonly
+                */
+
+                Object.assign(
+                    req.query,
+                    validatedData
+                );
+
+            }
+
+            else {
+
+                req[property] = validatedData;
+
+            }
+
 
             next();
 
-        } catch (error) {
+
+        }
+
+        catch (error) {
 
             const errors = error.errors || [
-                error.message,
+
+                error.message
+
             ];
 
+
             throw new ApiError(
+
                 400,
+
                 errors.join(", ")
+
             );
 
         }
@@ -47,5 +85,6 @@ const validateRequest = (
     });
 
 };
+
 
 export default validateRequest;
