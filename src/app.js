@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import multer from "multer";
 
 import notFound from "./middlewares/notFound.js";
 import errorHandler from "./middlewares/errorMiddleware.js";
@@ -9,8 +11,10 @@ import taskRoutes from "./routes/taskRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import teamRoutes from "./routes/teamRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
 
 const app = express();
+
 
 app.use(cors());
 
@@ -18,7 +22,23 @@ app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/uploads", express.static("src/uploads"));
+app.use(
+
+    "/uploads",
+
+    express.static(
+
+        path.join(
+
+            process.cwd(),
+
+            "uploads"
+
+        )
+
+    )
+
+);
 
 app.get("/", (req, res) => {
   res.json({
@@ -39,9 +59,78 @@ app.use(
     teamRoutes
 );
 app.use("/api/users", userRoutes);
+app.use(
+    "/api/profile",
+    profileRoutes
+);
 
 
 app.use(notFound);
+
+app.use((
+
+    error,
+
+    req,
+
+    res,
+
+    next
+
+) => {
+
+    if (error instanceof multer.MulterError) {
+
+        if (error.code === "LIMIT_FILE_SIZE") {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "Avatar image must not exceed 5 MB.",
+
+            });
+
+        }
+
+
+        return res.status(400).json({
+
+            success: false,
+
+            message: error.message,
+
+        });
+
+    }
+
+
+    if (
+
+        error.message ===
+
+        "Only JPG, JPEG, PNG, and WEBP images are allowed."
+
+    ) {
+
+        return res.status(400).json({
+
+            success: false,
+
+            message: error.message,
+
+        });
+
+    }
+
+
+    next(
+
+        error
+
+    );
+
+});
 
 app.use(errorHandler);
 

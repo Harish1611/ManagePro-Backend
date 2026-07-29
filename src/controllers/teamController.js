@@ -162,29 +162,31 @@ export const getTeamMembers = asyncHandler(async (req, res) => {
 
         ]);
 
-        members.push({
+       members.push({
 
-            _id: member._id,
+    _id: member._id,
 
-            name: member.name,
+    name: member.name,
 
-            email: member.email,
+    email: member.email,
 
-            avatar: member.avatar,
+    avatar: member.avatar,
 
-            role: member.role,
+    role: member.role,
 
-            isActive: member.isActive,
+    isActive: member.isActive,
 
-            projectsCount,
+    createdAt: member.createdAt,
 
-            tasksCount,
+    projectsCount,
 
-            completedTasks,
+    tasksCount,
 
-            pendingTasks,
+    completedTasks,
 
-        });
+    pendingTasks,
+
+});
 
     }
 
@@ -200,36 +202,139 @@ const {
 
     limit = 10,
 
-} = req.query;
+    search = "",
 
+    role = "",
+
+    status = "",
+
+    sort = "name",
+
+} = req.query;
 
 const currentPage = Number(page);
 
 const perPage = Number(limit);
 
-
 /*
-|-------------------------------------------------------------------------- 
-| Sort by Name
-|-------------------------------------------------------------------------- 
+|--------------------------------------------------------------------------
+| Search
+|--------------------------------------------------------------------------
 */
 
-members.sort((a, b) =>
-    a.name.localeCompare(b.name)
-);
+let filteredMembers = [...members];
 
+if (search) {
 
+    const keyword = search.toLowerCase();
+
+    filteredMembers = filteredMembers.filter(
+
+        (member) =>
+
+            member.name.toLowerCase().includes(keyword) ||
+
+            member.email.toLowerCase().includes(keyword)
+
+    );
+
+}
 
 /*
-|-------------------------------------------------------------------------- 
-| Pagination Apply
-|-------------------------------------------------------------------------- 
+|--------------------------------------------------------------------------
+| Role Filter
+|--------------------------------------------------------------------------
 */
 
-const total = members.length;
+if (role) {
 
+    filteredMembers = filteredMembers.filter(
 
-const paginatedMembers = members.slice(
+        (member) => member.role === role
+
+    );
+
+}
+
+/*
+|--------------------------------------------------------------------------
+| Status Filter
+|--------------------------------------------------------------------------
+*/
+
+if (status) {
+
+    const active = status === "active";
+
+    filteredMembers = filteredMembers.filter(
+
+        (member) => member.isActive === active
+
+    );
+
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sorting
+|--------------------------------------------------------------------------
+*/
+
+switch (sort) {
+
+    case "name":
+
+        filteredMembers.sort((a, b) =>
+            a.name.localeCompare(b.name)
+        );
+
+        break;
+
+    case "-name":
+
+        filteredMembers.sort((a, b) =>
+            b.name.localeCompare(a.name)
+        );
+
+        break;
+
+    case "createdAt":
+
+        filteredMembers.sort(
+            (a, b) =>
+                new Date(a.createdAt) -
+                new Date(b.createdAt)
+        );
+
+        break;
+
+    case "-createdAt":
+
+        filteredMembers.sort(
+            (a, b) =>
+                new Date(b.createdAt) -
+                new Date(a.createdAt)
+        );
+
+        break;
+
+    default:
+
+        filteredMembers.sort((a, b) =>
+            a.name.localeCompare(b.name)
+        );
+
+}
+
+/*
+|--------------------------------------------------------------------------
+| Pagination
+|--------------------------------------------------------------------------
+*/
+
+const total = filteredMembers.length;
+
+const paginatedMembers = filteredMembers.slice(
 
     (currentPage - 1) * perPage,
 
@@ -295,6 +400,9 @@ export const getMemberProfile = asyncHandler(async (req, res) => {
 
         );
 
+            console.log("PROFILE API");
+
+
     if (!member) {
 
         throw new ApiError(
@@ -313,35 +421,29 @@ export const getMemberProfile = asyncHandler(async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const hasAccess = await Project.exists({
+const hasAccess = await Project.exists({
 
-        isDeleted: false,
+    isDeleted: false,
 
-        $or: [
+    $and: [
 
-            {
-                owner: req.user._id,
-            },
+        {
+            $or: [
+                { owner: req.user._id },
+                { members: req.user._id },
+            ],
+        },
 
-            {
-                members: req.user._id,
-            },
+        {
+            $or: [
+                { owner: member._id },
+                { members: member._id },
+            ],
+        },
 
-        ],
+    ],
 
-        $or: [
-
-            {
-                owner: member._id,
-            },
-
-            {
-                members: member._id,
-            },
-
-        ],
-
-    });
+});
 
     if (!hasAccess) {
 
@@ -871,7 +973,7 @@ export const getMemberWorkload = asyncHandler(async (req, res) => {
             "name email avatar role"
         );
 
-
+ console.log("WORKLOAD API");
     if (!member) {
 
         throw new ApiError(
