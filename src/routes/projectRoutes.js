@@ -7,6 +7,8 @@ import {
     updateProject,
     deleteProject,
     getProjectMembers,
+    addProjectMembers,
+    removeProjectMember,
 } from "../controllers/projectController.js";
 
 import protect from "../middlewares/authMiddleware.js";
@@ -66,6 +68,24 @@ router
     "/:id/members",
     protect,
     getProjectMembers
+);
+
+
+router
+    .route("/:id/members")
+    .get(
+        protect,
+        getProjectMembers
+    )
+    .post(
+        protect,
+        addProjectMembers
+    );
+
+router.delete(
+    "/:id/members/:userId",
+    protect,
+    removeProjectMember
 );
 
 export default router;

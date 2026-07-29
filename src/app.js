@@ -8,6 +8,7 @@ import projectRoutes from "./routes/projectRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import teamRoutes from "./routes/teamRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 
 const app = express();
 
@@ -37,6 +38,8 @@ app.use(
     "/api/team",
     teamRoutes
 );
+app.use("/api/users", userRoutes);
+
 
 app.use(notFound);
 

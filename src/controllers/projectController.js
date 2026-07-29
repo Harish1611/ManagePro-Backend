@@ -3,6 +3,8 @@ import Project from "../models/Project.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
+import User from "../models/User.js";
+
 
 /*
 |--------------------------------------------------------------------------
@@ -385,6 +387,224 @@ export const deleteProject = asyncHandler(async (req, res) => {
             200,
 
             "Project deleted successfully"
+
+        )
+
+    );
+
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| POST
+| /api/projects/:id/members
+|--------------------------------------------------------------------------
+*/
+
+export const addProjectMembers = asyncHandler(async (req, res) => {
+
+    const { members = [] } = req.body;
+
+    if (!Array.isArray(members) || members.length === 0) {
+
+        throw new ApiError(
+            400,
+            "Members array is required"
+        );
+
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Owner Only
+    |--------------------------------------------------------------------------
+    */
+
+    const project = await Project.findOne({
+
+        _id: req.params.id,
+
+        owner: req.user._id,
+
+        isDeleted: false,
+
+    });
+
+    if (!project) {
+
+        throw new ApiError(
+            404,
+            "Project not found"
+        );
+
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Verify Users Exist
+    |--------------------------------------------------------------------------
+    */
+
+    const users = await User.find({
+
+        _id: {
+            $in: members,
+        },
+
+        isActive: true,
+
+    }).select("_id");
+
+    if (users.length !== members.length) {
+
+        throw new ApiError(
+            400,
+            "One or more users do not exist"
+        );
+
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Avoid Duplicates
+    |--------------------------------------------------------------------------
+    */
+
+    const existingMembers = new Set(
+
+        project.members.map(id =>
+            id.toString()
+        )
+
+    );
+
+    members.forEach((memberId) => {
+
+        if (
+            memberId.toString() !==
+            project.owner.toString()
+        ) {
+
+            existingMembers.add(
+                memberId.toString()
+            );
+
+        }
+
+    });
+
+    project.members = [...existingMembers];
+
+    await project.save();
+
+    await project.populate(
+        "members",
+        "name email avatar role"
+    );
+
+    return res.json(
+
+        new ApiResponse(
+
+            200,
+
+            "Members added successfully",
+
+            project.members
+
+        )
+
+    );
+
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| DELETE
+| /api/projects/:id/members/:userId
+|--------------------------------------------------------------------------
+*/
+
+export const removeProjectMember = asyncHandler(async (req, res) => {
+
+    const project = await Project.findOne({
+
+        _id: req.params.id,
+
+        owner: req.user._id,
+
+        isDeleted: false,
+
+    });
+
+    if (!project) {
+
+        throw new ApiError(
+            404,
+            "Project not found"
+        );
+
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cannot Remove Owner
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+
+        req.params.userId ===
+        project.owner.toString()
+
+    ) {
+
+        throw new ApiError(
+
+            400,
+
+            "Project owner cannot be removed"
+
+        );
+
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Remove Member
+    |--------------------------------------------------------------------------
+    */
+
+    project.members = project.members.filter(
+
+        (member) =>
+
+            member.toString() !==
+            req.params.userId
+
+    );
+
+    await project.save();
+
+    await project.populate(
+
+        "members",
+
+        "name email avatar role"
+
+    );
+
+    return res.json(
+
+        new ApiResponse(
+
+            200,
+
+            "Member removed successfully",
+
+            project.members
 
         )
 
