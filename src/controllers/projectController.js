@@ -48,7 +48,26 @@ export const createProject = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-export const getProjects = asyncHandler(async (req, res) => {
+const escapeRegex = (value = "") => {
+
+    return value.replace(
+
+        /[.*+?^${}()|[\]\\]/g,
+
+        "\\$&"
+
+    );
+
+};
+
+
+export const getProjects = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const {
 
@@ -64,6 +83,7 @@ export const getProjects = asyncHandler(async (req, res) => {
 
     } = req.query;
 
+
     const query = {
 
         owner: req.user._id,
@@ -72,15 +92,61 @@ export const getProjects = asyncHandler(async (req, res) => {
 
     };
 
-    if (search) {
 
-        query.$text = {
+    /*
+    |--------------------------------------------------------------------------
+    | Search
+    |--------------------------------------------------------------------------
+    */
 
-            $search: search,
+    const normalizedSearch =
 
-        };
+        search.trim();
+
+
+    if (normalizedSearch) {
+
+        const safeSearch =
+
+            escapeRegex(normalizedSearch);
+
+
+        query.$or = [
+
+            {
+
+                name: {
+
+                    $regex: safeSearch,
+
+                    $options: "i",
+
+                },
+
+            },
+
+            {
+
+                description: {
+
+                    $regex: safeSearch,
+
+                    $options: "i",
+
+                },
+
+            },
+
+        ];
 
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Status Filter
+    |--------------------------------------------------------------------------
+    */
 
     if (status) {
 
@@ -88,23 +154,71 @@ export const getProjects = asyncHandler(async (req, res) => {
 
     }
 
-    const currentPage = Number(page);
 
-    const perPage = Number(limit);
+    const currentPage =
 
-    const total = await Project.countDocuments(query);
+        Math.max(
 
-    const projects = await Project.find(query)
+            Number(page) || 1,
 
-        .populate("owner", "name email avatar")
+            1
 
-        .populate("members", "name email avatar")
+        );
 
-        .sort(sort)
 
-        .skip((currentPage - 1) * perPage)
+    const perPage =
 
-        .limit(perPage);
+        Math.max(
+
+            Number(limit) || 10,
+
+            1
+
+        );
+
+
+    const [
+
+        total,
+
+        projects,
+
+    ] = await Promise.all([
+
+        Project.countDocuments(query),
+
+        Project.find(query)
+
+            .populate(
+
+                "owner",
+
+                "name email avatar"
+
+            )
+
+            .populate(
+
+                "members",
+
+                "name email avatar"
+
+            )
+
+            .sort(sort)
+
+            .skip(
+
+                (currentPage - 1) *
+
+                perPage
+
+            )
+
+            .limit(perPage),
+
+    ]);
+
 
     return res.json(
 
@@ -126,7 +240,13 @@ export const getProjects = asyncHandler(async (req, res) => {
 
                     total,
 
-                    totalPages: Math.ceil(total / perPage),
+                    totalPages:
+
+                        Math.ceil(
+
+                            total / perPage
+
+                        ),
 
                 },
 
