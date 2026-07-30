@@ -5,6 +5,10 @@ import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
 
+import fs from "fs/promises";
+
+import path from "path";
+
 /*
 |--------------------------------------------------------------------------
 | Helper - Get Accessible Project
@@ -515,6 +519,438 @@ export const deleteTask = asyncHandler(async (req, res) => {
             200,
             "Task deleted successfully"
         )
+    );
+
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Delete Uploaded Local File
+|--------------------------------------------------------------------------
+*/
+
+const deleteLocalAttachmentFile = async (filePath) => {
+
+    if (!filePath) {
+
+        return;
+
+    }
+
+
+    try {
+
+        await fs.unlink(
+
+            filePath
+
+        );
+
+    } catch (error) {
+
+        if (error.code !== "ENOENT") {
+
+            console.error(
+
+                "Failed to delete attachment file:",
+
+                error
+
+            );
+
+        }
+
+    }
+
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| Validate Task Access
+|--------------------------------------------------------------------------
+*/
+
+const validateTaskAttachmentAccess = async (
+
+    task,
+
+    userId
+
+) => {
+
+    const hasAccess = await Project.exists({
+
+        _id: task.project,
+
+        isDeleted: false,
+
+        $or: [
+
+            {
+
+                owner: userId,
+
+            },
+
+            {
+
+                members: userId,
+
+            },
+
+        ],
+
+    });
+
+
+    if (!hasAccess) {
+
+        throw new ApiError(
+
+            403,
+
+            "You are not authorized to manage attachments for this task."
+
+        );
+
+    }
+
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| POST
+| /api/tasks/:taskId/attachments
+|--------------------------------------------------------------------------
+*/
+
+export const uploadTaskAttachment = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate Uploaded File
+    |--------------------------------------------------------------------------
+    */
+
+    if (!req.file) {
+
+        throw new ApiError(
+
+            400,
+
+            "Please select a file to upload."
+
+        );
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Find Task
+    |--------------------------------------------------------------------------
+    */
+
+    const task = await Task.findOne({
+
+        _id: req.params.taskId,
+
+        isDeleted: false,
+
+    });
+
+
+    if (!task) {
+
+        await deleteLocalAttachmentFile(
+
+            req.file.path
+
+        );
+
+
+        throw new ApiError(
+
+            404,
+
+            "Task not found."
+
+        );
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate Access
+    |--------------------------------------------------------------------------
+    */
+
+    try {
+
+        await validateTaskAttachmentAccess(
+
+            task,
+
+            req.user._id
+
+        );
+
+    } catch (error) {
+
+        await deleteLocalAttachmentFile(
+
+            req.file.path
+
+        );
+
+
+        throw error;
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Save Attachment Metadata
+    |--------------------------------------------------------------------------
+    */
+
+    const attachment = {
+
+        fileName: req.file.originalname,
+
+        fileUrl: `/uploads/attachments/${req.file.filename}`,
+
+        fileSize: req.file.size,
+
+        mimeType: req.file.mimetype,
+
+        uploadedAt: new Date(),
+
+    };
+
+
+    task.attachments.push(
+
+        attachment
+
+    );
+
+
+    try {
+
+        await task.save();
+
+    } catch (error) {
+
+        await deleteLocalAttachmentFile(
+
+            req.file.path
+
+        );
+
+
+        throw error;
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
+
+    return res.status(201).json(
+
+        new ApiResponse(
+
+            201,
+
+            "Attachment uploaded successfully",
+
+            {
+
+                attachments: task.attachments,
+
+            }
+
+        )
+
+    );
+
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| DELETE
+| /api/tasks/:taskId/attachments/:attachmentId
+|--------------------------------------------------------------------------
+*/
+
+export const deleteTaskAttachment = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Find Task
+    |--------------------------------------------------------------------------
+    */
+
+    const task = await Task.findOne({
+
+        _id: req.params.taskId,
+
+        isDeleted: false,
+
+    });
+
+
+    if (!task) {
+
+        throw new ApiError(
+
+            404,
+
+            "Task not found."
+
+        );
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate Access
+    |--------------------------------------------------------------------------
+    */
+
+    await validateTaskAttachmentAccess(
+
+        task,
+
+        req.user._id
+
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Find Attachment
+    |--------------------------------------------------------------------------
+    */
+
+    const attachment = task.attachments.id(
+
+        req.params.attachmentId
+
+    );
+
+
+    if (!attachment) {
+
+        throw new ApiError(
+
+            404,
+
+            "Attachment not found."
+
+        );
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Build Local File Path
+    |--------------------------------------------------------------------------
+    */
+
+    const relativeFilePath = attachment.fileUrl.replace(
+
+        /^\/+/,
+
+        ""
+
+    );
+
+
+    const localFilePath = path.join(
+
+        process.cwd(),
+
+        relativeFilePath
+
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Remove Attachment From Task
+    |--------------------------------------------------------------------------
+    */
+
+    task.attachments.pull(
+
+        attachment._id
+
+    );
+
+
+    await task.save();
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Delete Local File
+    |--------------------------------------------------------------------------
+    */
+
+    await deleteLocalAttachmentFile(
+
+        localFilePath
+
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
+
+    return res.status(200).json(
+
+        new ApiResponse(
+
+            200,
+
+            "Attachment deleted successfully",
+
+            {
+
+                attachments: task.attachments,
+
+            }
+
+        )
+
     );
 
 });
