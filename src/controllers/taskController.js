@@ -4,10 +4,20 @@ import Project from "../models/Project.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
+import logActivity from "../utils/logActivity.js";
+
+import {
+
+    ACTIVITY_ACTIONS,
+
+    ACTIVITY_ENTITY_TYPES,
+
+} from "../constants/activityConstants.js";
 
 import fs from "fs/promises";
 
 import path from "path";
+
 
 /*
 |--------------------------------------------------------------------------
@@ -16,29 +26,55 @@ import path from "path";
 */
 
 const getAccessibleProject = async (
+
     projectId,
+
     userId
+
 ) => {
 
     const project = await Project.findOne({
+
         _id: projectId,
+
         isDeleted: false,
+
         $or: [
-            { owner: userId },
-            { members: userId },
+
+            {
+
+                owner: userId,
+
+            },
+
+            {
+
+                members: userId,
+
+            },
+
         ],
+
     });
 
+
     if (!project) {
+
         throw new ApiError(
+
             404,
+
             "Project not found or access denied"
+
         );
+
     }
+
 
     return project;
 
 };
+
 
 /*
 |--------------------------------------------------------------------------
@@ -47,28 +83,94 @@ const getAccessibleProject = async (
 */
 
 const validateAssignedUser = (
+
     project,
+
     assignedTo
+
 ) => {
 
-    if (!assignedTo) return;
+    if (!assignedTo) {
+
+        return;
+
+    }
+
 
     const isOwner =
-        project.owner.equals(assignedTo);
+
+        project.owner.equals(
+
+            assignedTo
+
+        );
+
 
     const isMember =
-        project.members.some(member =>
-            member.equals(assignedTo)
+
+        project.members.some(
+
+            (member) =>
+
+                member.equals(
+
+                    assignedTo
+
+                )
+
         );
 
-    if (!isOwner && !isMember) {
+
+    if (
+
+        !isOwner &&
+
+        !isMember
+
+    ) {
+
         throw new ApiError(
+
             400,
+
             "Assigned user is not a member of this project"
+
         );
+
     }
 
 };
+
+
+/*
+|--------------------------------------------------------------------------
+| Helper - Convert ID To String
+|--------------------------------------------------------------------------
+*/
+
+const getIdString = (
+
+    value
+
+) => {
+
+    if (!value) {
+
+        return null;
+
+    }
+
+
+    return (
+
+        value._id ||
+
+        value
+
+    ).toString();
+
+};
+
 
 /*
 |--------------------------------------------------------------------------
@@ -77,17 +179,32 @@ const validateAssignedUser = (
 |--------------------------------------------------------------------------
 */
 
-export const createTask = asyncHandler(async (req, res) => {
+export const createTask = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const {
+
         title,
+
         description,
+
         project,
+
         assignedTo,
+
         priority,
+
         status,
+
         dueDate,
+
     } = req.body;
+
 
     /*
     |--------------------------------------------------------------------------
@@ -96,10 +213,15 @@ export const createTask = asyncHandler(async (req, res) => {
     */
 
     const existingProject =
+
         await getAccessibleProject(
+
             project,
+
             req.user._id
+
         );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -108,9 +230,13 @@ export const createTask = asyncHandler(async (req, res) => {
     */
 
     validateAssignedUser(
+
         existingProject,
+
         assignedTo
+
     );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -128,7 +254,9 @@ export const createTask = asyncHandler(async (req, res) => {
 
         assignedTo,
 
-        createdBy: req.user._id,
+        createdBy:
+
+            req.user._id,
 
         priority,
 
@@ -138,6 +266,7 @@ export const createTask = asyncHandler(async (req, res) => {
 
     });
 
+
     /*
     |--------------------------------------------------------------------------
     | Populate Relations
@@ -145,19 +274,179 @@ export const createTask = asyncHandler(async (req, res) => {
     */
 
     const populatedTask =
-        await Task.findById(task._id)
+
+        await Task.findById(
+
+            task._id
+
+        )
+
             .populate(
+
                 "project",
+
                 "name color"
+
             )
+
             .populate(
+
                 "assignedTo",
+
                 "name email avatar"
+
             )
+
             .populate(
+
                 "createdBy",
+
                 "name email avatar"
+
             );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log - Task Created
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.TASK_CREATED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.TASK,
+
+        entityId:
+
+            task._id,
+
+        project:
+
+            existingProject._id,
+
+        task:
+
+            task._id,
+
+        targetUser:
+
+            assignedTo || null,
+
+        message:
+
+            `${req.user.name || "A user"} created task ${task.title}`,
+
+        metadata: {
+
+            taskTitle:
+
+                task.title,
+
+            projectName:
+
+                existingProject.name,
+
+            status:
+
+                task.status,
+
+            priority:
+
+                task.priority,
+
+            assignedTo:
+
+                assignedTo || null,
+
+            dueDate:
+
+                task.dueDate || null,
+
+        },
+
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log - Task Assigned
+    |--------------------------------------------------------------------------
+    */
+
+    if (assignedTo) {
+
+        await logActivity({
+
+            actor:
+
+                req.user._id,
+
+            action:
+
+                ACTIVITY_ACTIONS.TASK_ASSIGNED,
+
+            entityType:
+
+                ACTIVITY_ENTITY_TYPES.TASK,
+
+            entityId:
+
+                task._id,
+
+            project:
+
+                existingProject._id,
+
+            task:
+
+                task._id,
+
+            targetUser:
+
+                assignedTo,
+
+            message:
+
+                `${req.user.name || "A user"} assigned ${task.title} to ${populatedTask?.assignedTo?.name || "a member"}`,
+
+            metadata: {
+
+                taskTitle:
+
+                    task.title,
+
+                projectName:
+
+                    existingProject.name,
+
+                previousAssignee:
+
+                    null,
+
+                currentAssignee:
+
+                    assignedTo,
+
+                currentAssigneeName:
+
+                    populatedTask?.assignedTo?.name || null,
+
+            },
+
+        });
+
+    }
+
 
     return res.status(201).json(
 
@@ -175,6 +464,7 @@ export const createTask = asyncHandler(async (req, res) => {
 
 });
 
+
 /*
 |--------------------------------------------------------------------------
 | GET
@@ -182,7 +472,13 @@ export const createTask = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-export const getTasks = asyncHandler(async (req, res) => {
+export const getTasks = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const {
 
@@ -204,6 +500,7 @@ export const getTasks = asyncHandler(async (req, res) => {
 
     } = req.query;
 
+
     /*
     |--------------------------------------------------------------------------
     | Accessible Projects
@@ -211,24 +508,48 @@ export const getTasks = asyncHandler(async (req, res) => {
     */
 
     const accessibleProjects =
+
         await Project.find({
 
             isDeleted: false,
 
             $or: [
 
-                { owner: req.user._id },
+                {
 
-                { members: req.user._id },
+                    owner:
+
+                        req.user._id,
+
+                },
+
+                {
+
+                    members:
+
+                        req.user._id,
+
+                },
 
             ],
 
-        }).select("_id");
+        }).select(
+
+            "_id"
+
+        );
+
 
     const projectIds =
+
         accessibleProjects.map(
-            project => project._id
+
+            (projectItem) =>
+
+                projectItem._id
+
         );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -241,10 +562,13 @@ export const getTasks = asyncHandler(async (req, res) => {
         isDeleted: false,
 
         project: {
+
             $in: projectIds,
+
         },
 
     };
+
 
     /*
     |--------------------------------------------------------------------------
@@ -284,6 +608,7 @@ export const getTasks = asyncHandler(async (req, res) => {
 
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Filters
@@ -291,20 +616,40 @@ export const getTasks = asyncHandler(async (req, res) => {
     */
 
     if (project) {
-        query.project = project;
+
+        query.project =
+
+            project;
+
     }
+
 
     if (assignedTo) {
-        query.assignedTo = assignedTo;
+
+        query.assignedTo =
+
+            assignedTo;
+
     }
+
 
     if (priority) {
-        query.priority = priority;
+
+        query.priority =
+
+            priority;
+
     }
 
+
     if (status) {
-        query.status = status;
+
+        query.status =
+
+            status;
+
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -313,41 +658,76 @@ export const getTasks = asyncHandler(async (req, res) => {
     */
 
     const currentPage =
+
         Number(page);
 
+
     const perPage =
+
         Number(limit);
 
+
     const total =
-        await Task.countDocuments(query);
+
+        await Task.countDocuments(
+
+            query
+
+        );
+
 
     const tasks =
+
         await Task.find(query)
 
             .populate(
+
                 "project",
+
                 "name color"
+
             )
 
             .populate(
+
                 "assignedTo",
+
                 "name email avatar"
+
             )
 
             .populate(
+
                 "createdBy",
+
                 "name email avatar"
+
             )
 
             .sort(sort)
 
             .skip(
-                (currentPage - 1) * perPage
+
+                (
+
+                    currentPage -
+
+                    1
+
+                ) *
+
+                    perPage
+
             )
 
-            .limit(perPage)
+            .limit(
+
+                perPage
+
+            )
 
             .lean();
+
 
     return res.json(
 
@@ -363,15 +743,25 @@ export const getTasks = asyncHandler(async (req, res) => {
 
                 pagination: {
 
-                    page: currentPage,
+                    page:
 
-                    limit: perPage,
+                        currentPage,
+
+                    limit:
+
+                        perPage,
 
                     total,
 
-                    totalPages: Math.ceil(
-                        total / perPage
-                    ),
+                    totalPages:
+
+                        Math.ceil(
+
+                            total /
+
+                                perPage
+
+                        ),
 
                 },
 
@@ -383,40 +773,95 @@ export const getTasks = asyncHandler(async (req, res) => {
 
 });
 
+
 /*
 |--------------------------------------------------------------------------
-| GET /api/tasks/:id
+| GET
+| /api/tasks/:id
 |--------------------------------------------------------------------------
 */
 
-export const getTaskById = asyncHandler(async (req, res) => {
+export const getTaskById = asyncHandler(async (
 
-    const task = await Task.findOne({
-        _id: req.params.id,
-        isDeleted: false,
-    })
-        .populate("project", "name color")
-        .populate("assignedTo", "name email avatar")
-        .populate("createdBy", "name email avatar");
+    req,
+
+    res
+
+) => {
+
+    const task =
+
+        await Task.findOne({
+
+            _id:
+
+                req.params.id,
+
+            isDeleted:
+
+                false,
+
+        })
+
+            .populate(
+
+                "project",
+
+                "name color"
+
+            )
+
+            .populate(
+
+                "assignedTo",
+
+                "name email avatar"
+
+            )
+
+            .populate(
+
+                "createdBy",
+
+                "name email avatar"
+
+            );
+
 
     if (!task) {
+
         throw new ApiError(
+
             404,
+
             "Task not found"
+
         );
+
     }
 
+
     await getAccessibleProject(
+
         task.project._id,
+
         req.user._id
+
     );
 
+
     return res.json(
+
         new ApiResponse(
+
             200,
+
             "Task fetched successfully",
+
             task
+
         )
+
     );
 
 });
@@ -424,28 +869,104 @@ export const getTaskById = asyncHandler(async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| PUT /api/tasks/:id
+| PUT
+| /api/tasks/:id
 |--------------------------------------------------------------------------
 */
 
-export const updateTask = asyncHandler(async (req, res) => {
+export const updateTask = asyncHandler(async (
 
-    const task = await Task.findOne({
-        _id: req.params.id,
-        isDeleted: false,
-    });
+    req,
+
+    res
+
+) => {
+
+    const task =
+
+        await Task.findOne({
+
+            _id:
+
+                req.params.id,
+
+            isDeleted:
+
+                false,
+
+        });
+
 
     if (!task) {
+
         throw new ApiError(
+
             404,
+
             "Task not found"
+
         );
+
     }
 
-    await getAccessibleProject(
-        task.project,
-        req.user._id
-    );
+
+    const accessibleProject =
+
+        await getAccessibleProject(
+
+            task.project,
+
+            req.user._id
+
+        );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Previous Task Values
+    |--------------------------------------------------------------------------
+    */
+
+    const previousTask = {
+
+        title:
+
+            task.title,
+
+        description:
+
+            task.description,
+
+        project:
+
+            getIdString(
+
+                task.project
+
+            ),
+
+        assignedTo:
+
+            getIdString(
+
+                task.assignedTo
+
+            ),
+
+        priority:
+
+            task.priority,
+
+        status:
+
+            task.status,
+
+        dueDate:
+
+            task.dueDate,
+
+    };
+
 
     /*
     |--------------------------------------------------------------------------
@@ -453,33 +974,358 @@ export const updateTask = asyncHandler(async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
+    let updatedProject =
+
+        accessibleProject;
+
+
     if (
+
         req.body.project &&
-        req.body.project.toString() !== task.project.toString()
+
+        req.body.project.toString() !==
+
+            task.project.toString()
+
     ) {
 
-        await getAccessibleProject(
-            req.body.project,
-            req.user._id
-        );
+        updatedProject =
+
+            await getAccessibleProject(
+
+                req.body.project,
+
+                req.user._id
+
+            );
 
     }
 
-    Object.assign(task, req.body);
+
+    Object.assign(
+
+        task,
+
+        req.body
+
+    );
+
 
     await task.save();
 
-    const updatedTask = await Task.findById(task._id)
-        .populate("project", "name color")
-        .populate("assignedTo", "name email avatar")
-        .populate("createdBy", "name email avatar");
+
+    const updatedTask =
+
+        await Task.findById(
+
+            task._id
+
+        )
+
+            .populate(
+
+                "project",
+
+                "name color"
+
+            )
+
+            .populate(
+
+                "assignedTo",
+
+                "name email avatar"
+
+            )
+
+            .populate(
+
+                "createdBy",
+
+                "name email avatar"
+
+            );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Current Task Values
+    |--------------------------------------------------------------------------
+    */
+
+    const currentTask = {
+
+        title:
+
+            task.title,
+
+        description:
+
+            task.description,
+
+        project:
+
+            getIdString(
+
+                task.project
+
+            ),
+
+        assignedTo:
+
+            getIdString(
+
+                task.assignedTo
+
+            ),
+
+        priority:
+
+            task.priority,
+
+        status:
+
+            task.status,
+
+        dueDate:
+
+            task.dueDate,
+
+    };
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log - Task Updated
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.TASK_UPDATED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.TASK,
+
+        entityId:
+
+            task._id,
+
+        project:
+
+            task.project,
+
+        task:
+
+            task._id,
+
+        targetUser:
+
+            task.assignedTo || null,
+
+        message:
+
+            `${req.user.name || "A user"} updated task ${task.title}`,
+
+        metadata: {
+
+            taskTitle:
+
+                task.title,
+
+            projectName:
+
+                updatedProject?.name ||
+
+                updatedTask?.project?.name ||
+
+                null,
+
+            previousValues:
+
+                previousTask,
+
+            currentValues:
+
+                currentTask,
+
+        },
+
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log - Status Changed
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+
+        previousTask.status !==
+
+        currentTask.status
+
+    ) {
+
+        await logActivity({
+
+            actor:
+
+                req.user._id,
+
+            action:
+
+                ACTIVITY_ACTIONS.TASK_STATUS_CHANGED,
+
+            entityType:
+
+                ACTIVITY_ENTITY_TYPES.TASK,
+
+            entityId:
+
+                task._id,
+
+            project:
+
+                task.project,
+
+            task:
+
+                task._id,
+
+            targetUser:
+
+                task.assignedTo || null,
+
+            message:
+
+                `${req.user.name || "A user"} moved ${task.title} from ${previousTask.status} to ${currentTask.status}`,
+
+            metadata: {
+
+                taskTitle:
+
+                    task.title,
+
+                previousStatus:
+
+                    previousTask.status,
+
+                currentStatus:
+
+                    currentTask.status,
+
+            },
+
+        });
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log - Assignment Changed
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+
+        previousTask.assignedTo !==
+
+        currentTask.assignedTo
+
+    ) {
+
+        const assigneeName =
+
+            updatedTask?.assignedTo?.name ||
+
+            null;
+
+
+        await logActivity({
+
+            actor:
+
+                req.user._id,
+
+            action:
+
+                ACTIVITY_ACTIONS.TASK_ASSIGNED,
+
+            entityType:
+
+                ACTIVITY_ENTITY_TYPES.TASK,
+
+            entityId:
+
+                task._id,
+
+            project:
+
+                task.project,
+
+            task:
+
+                task._id,
+
+            targetUser:
+
+                task.assignedTo || null,
+
+            message:
+
+                task.assignedTo
+
+                    ? `${req.user.name || "A user"} assigned ${task.title} to ${assigneeName || "a member"}`
+
+                    : `${req.user.name || "A user"} unassigned ${task.title}`,
+
+            metadata: {
+
+                taskTitle:
+
+                    task.title,
+
+                previousAssignee:
+
+                    previousTask.assignedTo,
+
+                currentAssignee:
+
+                    currentTask.assignedTo,
+
+                currentAssigneeName:
+
+                    assigneeName,
+
+            },
+
+        });
+
+    }
+
 
     return res.json(
+
         new ApiResponse(
+
             200,
+
             "Task updated successfully",
+
             updatedTask
+
         )
+
     );
 
 });
@@ -487,38 +1333,143 @@ export const updateTask = asyncHandler(async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| DELETE /api/tasks/:id
+| DELETE
+| /api/tasks/:id
 |--------------------------------------------------------------------------
 */
 
-export const deleteTask = asyncHandler(async (req, res) => {
+export const deleteTask = asyncHandler(async (
 
-    const task = await Task.findOne({
-        _id: req.params.id,
-        isDeleted: false,
-    });
+    req,
+
+    res
+
+) => {
+
+    const task =
+
+        await Task.findOne({
+
+            _id:
+
+                req.params.id,
+
+            isDeleted:
+
+                false,
+
+        });
+
 
     if (!task) {
+
         throw new ApiError(
+
             404,
+
             "Task not found"
+
         );
+
     }
 
-    await getAccessibleProject(
-        task.project,
-        req.user._id
-    );
 
-    task.isDeleted = true;
+    const project =
+
+        await getAccessibleProject(
+
+            task.project,
+
+            req.user._id
+
+        );
+
+
+    task.isDeleted =
+
+        true;
+
 
     await task.save();
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log - Task Deleted
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.TASK_DELETED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.TASK,
+
+        entityId:
+
+            task._id,
+
+        project:
+
+            task.project,
+
+        task:
+
+            task._id,
+
+        targetUser:
+
+            task.assignedTo || null,
+
+        message:
+
+            `${req.user.name || "A user"} deleted task ${task.title}`,
+
+        metadata: {
+
+            taskTitle:
+
+                task.title,
+
+            projectName:
+
+                project.name,
+
+            status:
+
+                task.status,
+
+            priority:
+
+                task.priority,
+
+            assignedTo:
+
+                task.assignedTo || null,
+
+        },
+
+    });
+
+
     return res.json(
+
         new ApiResponse(
+
             200,
+
             "Task deleted successfully"
+
         )
+
     );
 
 });
@@ -530,7 +1481,11 @@ export const deleteTask = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-const deleteLocalAttachmentFile = async (filePath) => {
+const deleteLocalAttachmentFile = async (
+
+    filePath
+
+) => {
 
     if (!filePath) {
 
@@ -547,9 +1502,17 @@ const deleteLocalAttachmentFile = async (filePath) => {
 
         );
 
-    } catch (error) {
+    }
 
-        if (error.code !== "ENOENT") {
+    catch (error) {
+
+        if (
+
+            error.code !==
+
+            "ENOENT"
+
+        ) {
 
             console.error(
 
@@ -580,29 +1543,39 @@ const validateTaskAttachmentAccess = async (
 
 ) => {
 
-    const hasAccess = await Project.exists({
+    const hasAccess =
 
-        _id: task.project,
+        await Project.exists({
 
-        isDeleted: false,
+            _id:
 
-        $or: [
+                task.project,
 
-            {
+            isDeleted:
 
-                owner: userId,
+                false,
 
-            },
+            $or: [
 
-            {
+                {
 
-                members: userId,
+                    owner:
 
-            },
+                        userId,
 
-        ],
+                },
 
-    });
+                {
+
+                    members:
+
+                        userId,
+
+                },
+
+            ],
+
+        });
 
 
     if (!hasAccess) {
@@ -660,13 +1633,19 @@ export const uploadTaskAttachment = asyncHandler(async (
     |--------------------------------------------------------------------------
     */
 
-    const task = await Task.findOne({
+    const task =
 
-        _id: req.params.taskId,
+        await Task.findOne({
 
-        isDeleted: false,
+            _id:
 
-    });
+                req.params.taskId,
+
+            isDeleted:
+
+                false,
+
+        });
 
 
     if (!task) {
@@ -705,7 +1684,9 @@ export const uploadTaskAttachment = asyncHandler(async (
 
         );
 
-    } catch (error) {
+    }
+
+    catch (error) {
 
         await deleteLocalAttachmentFile(
 
@@ -727,15 +1708,25 @@ export const uploadTaskAttachment = asyncHandler(async (
 
     const attachment = {
 
-        fileName: req.file.originalname,
+        fileName:
 
-        fileUrl: `/uploads/attachments/${req.file.filename}`,
+            req.file.originalname,
 
-        fileSize: req.file.size,
+        fileUrl:
 
-        mimeType: req.file.mimetype,
+            `/uploads/attachments/${req.file.filename}`,
 
-        uploadedAt: new Date(),
+        fileSize:
+
+            req.file.size,
+
+        mimeType:
+
+            req.file.mimetype,
+
+        uploadedAt:
+
+            new Date(),
 
     };
 
@@ -751,7 +1742,9 @@ export const uploadTaskAttachment = asyncHandler(async (
 
         await task.save();
 
-    } catch (error) {
+    }
+
+    catch (error) {
 
         await deleteLocalAttachmentFile(
 
@@ -763,6 +1756,102 @@ export const uploadTaskAttachment = asyncHandler(async (
         throw error;
 
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Get Saved Attachment
+    |--------------------------------------------------------------------------
+    */
+
+    const savedAttachment =
+
+        task.attachments[
+
+            task.attachments.length -
+
+            1
+
+        ];
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log - Attachment Uploaded
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.ATTACHMENT_UPLOADED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.ATTACHMENT,
+
+        entityId:
+
+            savedAttachment?._id ||
+
+            task._id,
+
+        project:
+
+            task.project,
+
+        task:
+
+            task._id,
+
+        targetUser:
+
+            task.assignedTo || null,
+
+        message:
+
+            `${req.user.name || "A user"} uploaded ${req.file.originalname} to ${task.title}`,
+
+        metadata: {
+
+            taskTitle:
+
+                task.title,
+
+            attachmentId:
+
+                savedAttachment?._id || null,
+
+            fileName:
+
+                req.file.originalname,
+
+            storedFileName:
+
+                req.file.filename,
+
+            fileUrl:
+
+                savedAttachment?.fileUrl ||
+
+                attachment.fileUrl,
+
+            fileSize:
+
+                req.file.size,
+
+            mimeType:
+
+                req.file.mimetype,
+
+        },
+
+    });
 
 
     /*
@@ -781,7 +1870,9 @@ export const uploadTaskAttachment = asyncHandler(async (
 
             {
 
-                attachments: task.attachments,
+                attachments:
+
+                    task.attachments,
 
             }
 
@@ -813,13 +1904,19 @@ export const deleteTaskAttachment = asyncHandler(async (
     |--------------------------------------------------------------------------
     */
 
-    const task = await Task.findOne({
+    const task =
 
-        _id: req.params.taskId,
+        await Task.findOne({
 
-        isDeleted: false,
+            _id:
 
-    });
+                req.params.taskId,
+
+            isDeleted:
+
+                false,
+
+        });
 
 
     if (!task) {
@@ -856,11 +1953,13 @@ export const deleteTaskAttachment = asyncHandler(async (
     |--------------------------------------------------------------------------
     */
 
-    const attachment = task.attachments.id(
+    const attachment =
 
-        req.params.attachmentId
+        task.attachments.id(
 
-    );
+            req.params.attachmentId
+
+        );
 
 
     if (!attachment) {
@@ -878,26 +1977,65 @@ export const deleteTaskAttachment = asyncHandler(async (
 
     /*
     |--------------------------------------------------------------------------
+    | Store Attachment Data Before Removal
+    |--------------------------------------------------------------------------
+    */
+
+    const deletedAttachment = {
+
+        _id:
+
+            attachment._id,
+
+        fileName:
+
+            attachment.fileName,
+
+        fileUrl:
+
+            attachment.fileUrl,
+
+        fileSize:
+
+            attachment.fileSize,
+
+        mimeType:
+
+            attachment.mimeType,
+
+        uploadedAt:
+
+            attachment.uploadedAt,
+
+    };
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Build Local File Path
     |--------------------------------------------------------------------------
     */
 
-    const relativeFilePath = attachment.fileUrl.replace(
+    const relativeFilePath =
 
-        /^\/+/,
+        attachment.fileUrl.replace(
 
-        ""
+            /^\/+/,
 
-    );
+            ""
+
+        );
 
 
-    const localFilePath = path.join(
+    const localFilePath =
 
-        process.cwd(),
+        path.join(
 
-        relativeFilePath
+            process.cwd(),
 
-    );
+            relativeFilePath
+
+        );
 
 
     /*
@@ -931,6 +2069,77 @@ export const deleteTaskAttachment = asyncHandler(async (
 
     /*
     |--------------------------------------------------------------------------
+    | Activity Log - Attachment Deleted
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.ATTACHMENT_DELETED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.ATTACHMENT,
+
+        entityId:
+
+            deletedAttachment._id,
+
+        project:
+
+            task.project,
+
+        task:
+
+            task._id,
+
+        targetUser:
+
+            task.assignedTo || null,
+
+        message:
+
+            `${req.user.name || "A user"} deleted ${deletedAttachment.fileName} from ${task.title}`,
+
+        metadata: {
+
+            taskTitle:
+
+                task.title,
+
+            attachmentId:
+
+                deletedAttachment._id,
+
+            fileName:
+
+                deletedAttachment.fileName,
+
+            fileUrl:
+
+                deletedAttachment.fileUrl,
+
+            fileSize:
+
+                deletedAttachment.fileSize,
+
+            mimeType:
+
+                deletedAttachment.mimeType,
+
+        },
+
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Response
     |--------------------------------------------------------------------------
     */
@@ -945,7 +2154,9 @@ export const deleteTaskAttachment = asyncHandler(async (
 
             {
 
-                attachments: task.attachments,
+                attachments:
+
+                    task.attachments,
 
             }
 

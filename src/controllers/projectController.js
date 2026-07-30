@@ -1,9 +1,18 @@
 import Project from "../models/Project.js";
+import User from "../models/User.js";
 
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
-import User from "../models/User.js";
+import logActivity from "../utils/logActivity.js";
+
+import {
+
+    ACTIVITY_ACTIONS,
+
+    ACTIVITY_ENTITY_TYPES,
+
+} from "../constants/activityConstants.js";
 
 
 /*
@@ -13,7 +22,13 @@ import User from "../models/User.js";
 |--------------------------------------------------------------------------
 */
 
-export const createProject = asyncHandler(async (req, res) => {
+export const createProject = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const project = await Project.create({
 
@@ -21,9 +36,61 @@ export const createProject = asyncHandler(async (req, res) => {
 
         owner: req.user._id,
 
-        members: [req.user._id],
+        members: [
+
+            req.user._id,
+
+        ],
 
     });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.PROJECT_CREATED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.PROJECT,
+
+        entityId:
+
+            project._id,
+
+        project:
+
+            project._id,
+
+        message:
+
+            `${req.user.name || "A user"} created project ${project.name}`,
+
+        metadata: {
+
+            projectName:
+
+                project.name,
+
+            status:
+
+                project.status,
+
+        },
+
+    });
+
 
     return res.status(201).json(
 
@@ -41,6 +108,7 @@ export const createProject = asyncHandler(async (req, res) => {
 
 });
 
+
 /*
 |--------------------------------------------------------------------------
 | GET
@@ -48,7 +116,11 @@ export const createProject = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-const escapeRegex = (value = "") => {
+const escapeRegex = (
+
+    value = ""
+
+) => {
 
     return value.replace(
 
@@ -86,9 +158,13 @@ export const getProjects = asyncHandler(async (
 
     const query = {
 
-        owner: req.user._id,
+        owner:
 
-        isDeleted: false,
+            req.user._id,
+
+        isDeleted:
+
+            false,
 
     };
 
@@ -108,7 +184,11 @@ export const getProjects = asyncHandler(async (
 
         const safeSearch =
 
-            escapeRegex(normalizedSearch);
+            escapeRegex(
+
+                normalizedSearch
+
+            );
 
 
         query.$or = [
@@ -117,9 +197,13 @@ export const getProjects = asyncHandler(async (
 
                 name: {
 
-                    $regex: safeSearch,
+                    $regex:
 
-                    $options: "i",
+                        safeSearch,
+
+                    $options:
+
+                        "i",
 
                 },
 
@@ -129,9 +213,13 @@ export const getProjects = asyncHandler(async (
 
                 description: {
 
-                    $regex: safeSearch,
+                    $regex:
 
-                    $options: "i",
+                        safeSearch,
+
+                    $options:
+
+                        "i",
 
                 },
 
@@ -150,7 +238,9 @@ export const getProjects = asyncHandler(async (
 
     if (status) {
 
-        query.status = status;
+        query.status =
+
+            status;
 
     }
 
@@ -185,7 +275,11 @@ export const getProjects = asyncHandler(async (
 
     ] = await Promise.all([
 
-        Project.countDocuments(query),
+        Project.countDocuments(
+
+            query
+
+        ),
 
         Project.find(query)
 
@@ -209,13 +303,23 @@ export const getProjects = asyncHandler(async (
 
             .skip(
 
-                (currentPage - 1) *
+                (
 
-                perPage
+                    currentPage -
+
+                    1
+
+                ) *
+
+                    perPage
 
             )
 
-            .limit(perPage),
+            .limit(
+
+                perPage
+
+            ),
 
     ]);
 
@@ -234,9 +338,13 @@ export const getProjects = asyncHandler(async (
 
                 pagination: {
 
-                    page: currentPage,
+                    page:
 
-                    limit: perPage,
+                        currentPage,
+
+                    limit:
+
+                        perPage,
 
                     total,
 
@@ -244,7 +352,9 @@ export const getProjects = asyncHandler(async (
 
                         Math.ceil(
 
-                            total / perPage
+                            total /
+
+                                perPage
 
                         ),
 
@@ -258,6 +368,7 @@ export const getProjects = asyncHandler(async (
 
 });
 
+
 /*
 |--------------------------------------------------------------------------
 | GET
@@ -265,21 +376,46 @@ export const getProjects = asyncHandler(async (
 |--------------------------------------------------------------------------
 */
 
-export const getProjectById = asyncHandler(async (req, res) => {
+export const getProjectById = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const project = await Project.findOne({
 
-        _id: req.params.id,
+        _id:
 
-        owner: req.user._id,
+            req.params.id,
 
-        isDeleted: false,
+        owner:
+
+            req.user._id,
+
+        isDeleted:
+
+            false,
 
     })
 
-        .populate("owner", "name email avatar")
+        .populate(
 
-        .populate("members", "name email avatar");
+            "owner",
+
+            "name email avatar"
+
+        )
+
+        .populate(
+
+            "members",
+
+            "name email avatar"
+
+        );
+
 
     if (!project) {
 
@@ -292,6 +428,7 @@ export const getProjectById = asyncHandler(async (req, res) => {
         );
 
     }
+
 
     return res.json(
 
@@ -309,6 +446,7 @@ export const getProjectById = asyncHandler(async (req, res) => {
 
 });
 
+
 /*
 |--------------------------------------------------------------------------
 | GET
@@ -316,25 +454,39 @@ export const getProjectById = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-export const getProjectMembers = asyncHandler(async (req, res) => {
+export const getProjectMembers = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const project = await Project.findOne({
 
-        _id: req.params.id,
+        _id:
 
-        isDeleted: false,
+            req.params.id,
+
+        isDeleted:
+
+            false,
 
         $or: [
 
             {
 
-                owner: req.user._id,
+                owner:
+
+                    req.user._id,
 
             },
 
             {
 
-                members: req.user._id,
+                members:
+
+                    req.user._id,
 
             },
 
@@ -358,6 +510,7 @@ export const getProjectMembers = asyncHandler(async (req, res) => {
 
         );
 
+
     if (!project) {
 
         throw new ApiError(
@@ -369,6 +522,7 @@ export const getProjectMembers = asyncHandler(async (req, res) => {
         );
 
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -392,6 +546,7 @@ export const getProjectMembers = asyncHandler(async (req, res) => {
 
     ];
 
+
     return res.json(
 
         new ApiResponse(
@@ -408,6 +563,7 @@ export const getProjectMembers = asyncHandler(async (req, res) => {
 
 });
 
+
 /*
 |--------------------------------------------------------------------------
 | PUT
@@ -415,17 +571,30 @@ export const getProjectMembers = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-export const updateProject = asyncHandler(async (req, res) => {
+export const updateProject = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const project = await Project.findOne({
 
-        _id: req.params.id,
+        _id:
 
-        owner: req.user._id,
+            req.params.id,
 
-        isDeleted: false,
+        owner:
+
+            req.user._id,
+
+        isDeleted:
+
+            false,
 
     });
+
 
     if (!project) {
 
@@ -439,6 +608,30 @@ export const updateProject = asyncHandler(async (req, res) => {
 
     }
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Previous Project Data
+    |--------------------------------------------------------------------------
+    */
+
+    const previousProject = {
+
+        name:
+
+            project.name,
+
+        description:
+
+            project.description,
+
+        status:
+
+            project.status,
+
+    };
+
+
     Object.assign(
 
         project,
@@ -447,7 +640,76 @@ export const updateProject = asyncHandler(async (req, res) => {
 
     );
 
+
     await project.save();
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.PROJECT_UPDATED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.PROJECT,
+
+        entityId:
+
+            project._id,
+
+        project:
+
+            project._id,
+
+        message:
+
+            `${req.user.name || "A user"} updated project ${project.name}`,
+
+        metadata: {
+
+            projectName:
+
+                project.name,
+
+            previousName:
+
+                previousProject.name,
+
+            currentName:
+
+                project.name,
+
+            previousDescription:
+
+                previousProject.description,
+
+            currentDescription:
+
+                project.description,
+
+            previousStatus:
+
+                previousProject.status,
+
+            currentStatus:
+
+                project.status,
+
+        },
+
+    });
+
 
     return res.json(
 
@@ -465,6 +727,7 @@ export const updateProject = asyncHandler(async (req, res) => {
 
 });
 
+
 /*
 |--------------------------------------------------------------------------
 | DELETE
@@ -472,17 +735,30 @@ export const updateProject = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-export const deleteProject = asyncHandler(async (req, res) => {
+export const deleteProject = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const project = await Project.findOne({
 
-        _id: req.params.id,
+        _id:
 
-        owner: req.user._id,
+            req.params.id,
 
-        isDeleted: false,
+        owner:
+
+            req.user._id,
+
+        isDeleted:
+
+            false,
 
     });
+
 
     if (!project) {
 
@@ -496,9 +772,61 @@ export const deleteProject = asyncHandler(async (req, res) => {
 
     }
 
-    project.isDeleted = true;
+
+    project.isDeleted =
+
+        true;
+
 
     await project.save();
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log
+    |--------------------------------------------------------------------------
+    */
+
+    await logActivity({
+
+        actor:
+
+            req.user._id,
+
+        action:
+
+            ACTIVITY_ACTIONS.PROJECT_DELETED,
+
+        entityType:
+
+            ACTIVITY_ENTITY_TYPES.PROJECT,
+
+        entityId:
+
+            project._id,
+
+        project:
+
+            project._id,
+
+        message:
+
+            `${req.user.name || "A user"} deleted project ${project.name}`,
+
+        metadata: {
+
+            projectName:
+
+                project.name,
+
+            status:
+
+                project.status,
+
+        },
+
+    });
+
 
     return res.json(
 
@@ -522,18 +850,43 @@ export const deleteProject = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-export const addProjectMembers = asyncHandler(async (req, res) => {
+export const addProjectMembers = asyncHandler(async (
 
-    const { members = [] } = req.body;
+    req,
 
-    if (!Array.isArray(members) || members.length === 0) {
+    res
+
+) => {
+
+    const {
+
+        members = [],
+
+    } = req.body;
+
+
+    if (
+
+        !Array.isArray(
+
+            members
+
+        ) ||
+
+        members.length === 0
+
+    ) {
 
         throw new ApiError(
+
             400,
+
             "Members array is required"
+
         );
 
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -543,22 +896,33 @@ export const addProjectMembers = asyncHandler(async (req, res) => {
 
     const project = await Project.findOne({
 
-        _id: req.params.id,
+        _id:
 
-        owner: req.user._id,
+            req.params.id,
 
-        isDeleted: false,
+        owner:
+
+            req.user._id,
+
+        isDeleted:
+
+            false,
 
     });
+
 
     if (!project) {
 
         throw new ApiError(
+
             404,
+
             "Project not found"
+
         );
 
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -569,21 +933,63 @@ export const addProjectMembers = asyncHandler(async (req, res) => {
     const users = await User.find({
 
         _id: {
-            $in: members,
+
+            $in:
+
+                members,
+
         },
 
-        isActive: true,
+        isActive:
 
-    }).select("_id");
+            true,
 
-    if (users.length !== members.length) {
+    }).select(
+
+        "_id name email"
+
+    );
+
+
+    if (
+
+        users.length !==
+
+        members.length
+
+    ) {
 
         throw new ApiError(
+
             400,
+
             "One or more users do not exist"
+
         );
 
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Existing Member IDs
+    |--------------------------------------------------------------------------
+    */
+
+    const previousMemberIds =
+
+        new Set(
+
+            project.members.map(
+
+                (id) =>
+
+                    id.toString()
+
+            )
+
+        );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -591,37 +997,154 @@ export const addProjectMembers = asyncHandler(async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const existingMembers = new Set(
+    const existingMembers =
 
-        project.members.map(id =>
-            id.toString()
+        new Set(
+
+            project.members.map(
+
+                (id) =>
+
+                    id.toString()
+
+            )
+
+        );
+
+
+    members.forEach(
+
+        (memberId) => {
+
+            if (
+
+                memberId.toString() !==
+
+                project.owner.toString()
+
+            ) {
+
+                existingMembers.add(
+
+                    memberId.toString()
+
+                );
+
+            }
+
+        }
+
+    );
+
+
+    project.members = [
+
+        ...existingMembers,
+
+    ];
+
+
+    await project.save();
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Find Newly Added Members
+    |--------------------------------------------------------------------------
+    */
+
+    const newlyAddedUsers =
+
+        users.filter(
+
+            (user) =>
+
+                user._id.toString() !==
+
+                    project.owner.toString() &&
+
+                !previousMemberIds.has(
+
+                    user._id.toString()
+
+                )
+
+        );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Logs
+    |--------------------------------------------------------------------------
+    */
+
+    await Promise.all(
+
+        newlyAddedUsers.map(
+
+            (addedUser) =>
+
+                logActivity({
+
+                    actor:
+
+                        req.user._id,
+
+                    action:
+
+                        ACTIVITY_ACTIONS.PROJECT_MEMBER_ADDED,
+
+                    entityType:
+
+                        ACTIVITY_ENTITY_TYPES.PROJECT,
+
+                    entityId:
+
+                        project._id,
+
+                    project:
+
+                        project._id,
+
+                    targetUser:
+
+                        addedUser._id,
+
+                    message:
+
+                        `${req.user.name || "A user"} added ${addedUser.name} to ${project.name}`,
+
+                    metadata: {
+
+                        projectName:
+
+                            project.name,
+
+                        memberName:
+
+                            addedUser.name,
+
+                        memberEmail:
+
+                            addedUser.email,
+
+                    },
+
+                })
+
         )
 
     );
 
-    members.forEach((memberId) => {
-
-        if (
-            memberId.toString() !==
-            project.owner.toString()
-        ) {
-
-            existingMembers.add(
-                memberId.toString()
-            );
-
-        }
-
-    });
-
-    project.members = [...existingMembers];
-
-    await project.save();
 
     await project.populate(
+
         "members",
+
         "name email avatar role"
+
     );
+
 
     return res.json(
 
@@ -647,26 +1170,43 @@ export const addProjectMembers = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-export const removeProjectMember = asyncHandler(async (req, res) => {
+export const removeProjectMember = asyncHandler(async (
+
+    req,
+
+    res
+
+) => {
 
     const project = await Project.findOne({
 
-        _id: req.params.id,
+        _id:
 
-        owner: req.user._id,
+            req.params.id,
 
-        isDeleted: false,
+        owner:
+
+            req.user._id,
+
+        isDeleted:
+
+            false,
 
     });
+
 
     if (!project) {
 
         throw new ApiError(
+
             404,
+
             "Project not found"
+
         );
 
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -677,6 +1217,7 @@ export const removeProjectMember = asyncHandler(async (req, res) => {
     if (
 
         req.params.userId ===
+
         project.owner.toString()
 
     ) {
@@ -691,22 +1232,119 @@ export const removeProjectMember = asyncHandler(async (req, res) => {
 
     }
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Find Removed Member
+    |--------------------------------------------------------------------------
+    */
+
+    const removedUser =
+
+        await User.findById(
+
+            req.params.userId
+
+        ).select(
+
+            "_id name email"
+
+        );
+
+
+    const wasProjectMember =
+
+        project.members.some(
+
+            (member) =>
+
+                member.toString() ===
+
+                req.params.userId
+
+        );
+
+
     /*
     |--------------------------------------------------------------------------
     | Remove Member
     |--------------------------------------------------------------------------
     */
 
-    project.members = project.members.filter(
+    project.members =
 
-        (member) =>
+        project.members.filter(
 
-            member.toString() !==
-            req.params.userId
+            (member) =>
 
-    );
+                member.toString() !==
+
+                req.params.userId
+
+        );
+
 
     await project.save();
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Activity Log
+    |--------------------------------------------------------------------------
+    */
+
+    if (wasProjectMember) {
+
+        await logActivity({
+
+            actor:
+
+                req.user._id,
+
+            action:
+
+                ACTIVITY_ACTIONS.PROJECT_MEMBER_REMOVED,
+
+            entityType:
+
+                ACTIVITY_ENTITY_TYPES.PROJECT,
+
+            entityId:
+
+                project._id,
+
+            project:
+
+                project._id,
+
+            targetUser:
+
+                removedUser?._id || null,
+
+            message:
+
+                `${req.user.name || "A user"} removed ${removedUser?.name || "a member"} from ${project.name}`,
+
+            metadata: {
+
+                projectName:
+
+                    project.name,
+
+                memberName:
+
+                    removedUser?.name || null,
+
+                memberEmail:
+
+                    removedUser?.email || null,
+
+            },
+
+        });
+
+    }
+
 
     await project.populate(
 
@@ -715,6 +1353,7 @@ export const removeProjectMember = asyncHandler(async (req, res) => {
         "name email avatar role"
 
     );
+
 
     return res.json(
 

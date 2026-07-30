@@ -12,6 +12,8 @@ import dashboardRoutes from "./routes/dashboardRoutes.js";
 import teamRoutes from "./routes/teamRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
+import activityRoutes from "./routes/activityRoutes.js";
+
 
 const app = express();
 
@@ -63,6 +65,15 @@ app.use(
     "/api/profile",
     profileRoutes
 );
+app.use(
+
+    "/api/activities",
+
+    activityRoutes
+
+);
+
+
 
 
 app.use(notFound);
